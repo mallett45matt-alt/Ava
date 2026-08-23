@@ -43,7 +43,7 @@ to the database. She's given a fixed list of functions she's allowed to call
 (e.g. `getTodaysJobs`, `getOutstandingInvoices`, `createTask`), each of which
 is already scoped to your business. Reading data happens immediately;
 creating or changing data always comes back as "here's what I'd do — confirm?"
-first. See `src/server/ava/` (added once the AI layer is built).
+first. See `src/server/ava/` and "How Ava works" below.
 
 **Money is stored as cents**, e.g. $45.50 is stored as the integer `4550`.
 This avoids floating-point rounding bugs and a technical headache Prisma's
@@ -71,7 +71,7 @@ src/
     data/                 One file per feature: reads (e.g. `customers.ts`)
                            and, in a matching `-actions.ts` file, the
                            Server Actions that change data (creates/updates).
-    ava/                  The AI assistant's tools and reasoning (added later).
+    ava/                  Ava's tools, system prompt, and conversation loop.
   lib/                    Formatting helpers, small utilities.
   middleware → proxy.ts   Redirects signed-out visitors to /login and signed-in
                            visitors away from /login and /signup (Next.js 16
@@ -111,6 +111,48 @@ never need to log into the software). From there:
 
 See `prisma/schema.prisma` for the exact fields and relationships — it's
 written to be readable on its own.
+
+## How Ava works
+
+Ava is powered by Claude (Anthropic's API) via `src/server/ava/`:
+
+- **`tools.ts`** defines the exact list of things Ava can do — nothing else.
+  Read tools (`getTodaysJobs`, `getUpcomingJobs`, `getOutstandingInvoices`,
+  `getPendingQuotes`, `getCustomer`, `getLapsedCustomers`, `getOpenTasks`) run
+  immediately and only ever return data scoped to the logged-in business.
+  Write tools (`createTask`, `createJob`, `createRecurringJob`) are split into
+  a `prepare` step (validates the request and writes nothing) and an
+  `execute` step (does the actual database write) — `execute` is only ever
+  called after the user taps "Confirm" in the chat UI.
+- **`chat.ts`** runs the conversation loop by hand (not the SDK's automatic
+  tool runner), because a confirmation can arrive several HTTP requests
+  later — the loop needs to be able to pause and resume across separate
+  Server Action calls, which the automatic runner isn't built for. When
+  Claude asks for a write tool, the loop stops and hands the client a
+  `pendingAction` (the proposed change plus a human-readable summary)
+  instead of executing it.
+- **`AskAva.tsx`** is the chat widget on the dashboard. It keeps the raw
+  conversation in memory (lost on page refresh — there's no chat-history
+  table in V1, a reasonable next addition) and renders a Confirm/Cancel card
+  whenever a `pendingAction` comes back.
+- If a customer name is ambiguous or matches nobody, the tool tells Claude so
+  directly (as a tool error) so it can ask a clarifying question, rather than
+  guessing or showing a confirmation for the wrong person.
+
+Ava needs `ANTHROPIC_API_KEY` set to work — without it, the chat widget
+explains that clearly instead of erroring. The dashboard's "AI suggestions"
+(quiet-week nudges, overdue invoices, stale quotes) are separate: they're
+plain rule-based checks in `src/server/data/dashboard.ts`, not an LLM call —
+fast, free, and available even without an API key, and Ava's tools are built
+from the exact same underlying data functions.
+
+**Testing note:** this was built and tested end-to-end (signup through every
+feature, including the "not configured" state) without a live Anthropic API
+key available in the build environment, so the tool-calling conversation loop
+itself is implemented strictly to the documented API/SDK behaviour but
+hasn't been exercised against a real model. Worth a careful first real-world
+test — a good first check is "What do I have on today?" followed by "Create
+a task to follow up on it."
 
 ## Running it locally
 
@@ -178,10 +220,28 @@ upstream, but not a risk to the running app.
 - [x] Data model, database, and migrations
 - [x] Accounts, login, multi-tenant session scoping
 - [x] App shell and navigation (mobile + desktop)
-- [ ] Customers
-- [ ] Jobs, calendar, recurring jobs
-- [ ] Quotes
-- [ ] Invoices
-- [ ] Tasks
-- [ ] Dashboard
-- [ ] Ava AI assistant
+- [x] Customers
+- [x] Jobs, calendar, recurring jobs
+- [x] Quotes
+- [x] Invoices
+- [x] Tasks
+- [x] Dashboard (today/upcoming/tasks/quotes/invoices + rule-based suggestions)
+- [x] Ava AI assistant (tool-calling + confirmation flow; see the testing
+      note above — not yet exercised against a live API key)
+
+Every feature above was tested end-to-end with a scripted browser (Playwright)
+covering the full flow: signup, create/edit/status changes, cross-feature
+links (job → invoice, quote → invoice), and cross-tenant access checks (a
+customer/job/quote/invoice id from another business correctly 404s rather
+than leaking data). Two real bugs were caught this way and fixed: a `null`
+vs `undefined` mismatch between `FormData.get()` and Zod's `.optional()` that
+broke invoice creation from a job/quote, and the same bug in task creation.
+
+### Natural next steps
+
+Reasonable follow-ups once this is being used for real, roughly in order of
+value: persist Ava's chat history (a lightweight `AvaMessage` table) so a
+page refresh doesn't lose the conversation; let Ava actually send quotes and
+invoices by email, rather than just marking them "Sent"; a settings page for
+notification preferences; and, once there's a live API key to test against,
+a pass on Ava's system prompt informed by real conversations.

@@ -7,6 +7,7 @@ import { ButtonLink } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { JobListItem } from "@/components/jobs/JobListItem";
+import { AskAva } from "@/components/ava/AskAva";
 import { formatCents, formatDate } from "@/lib/format";
 import { lineItemsTotalCents } from "@/server/data/line-items";
 import { taskPriorityMeta, quoteStatusMeta, invoiceStatusMeta } from "@/lib/status";
@@ -33,6 +34,8 @@ export default async function DashboardPage() {
         </h1>
         <p className="mt-1 text-sm text-muted">Here&apos;s what needs doing.</p>
       </div>
+
+      <AskAva />
 
       {suggestions.length > 0 && (
         <div className="space-y-3">
