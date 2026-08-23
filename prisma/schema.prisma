@@ -1,0 +1,319 @@
+// Ava data model
+//
+// Everything a business owns (customers, jobs, quotes, invoices, tasks...)
+// carries a `businessId`. All reads/writes go through the scoped data
+// helpers in `src/server/db/scope.ts`, which always filter by the
+// logged-in user's business — that is what keeps one business from ever
+// seeing another business's data.
+//
+// Money is stored as integer cents (e.g. $45.50 -> 4550) to avoid
+// floating point rounding bugs and Prisma Decimal serialization issues
+// when passing data from server to client components.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy & accounts
+// ---------------------------------------------------------------------------
+
+model Business {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  staffMembers  StaffMember[]
+  customers     Customer[]
+  jobs          Job[]
+  recurringJobs RecurringJob[]
+  quotes        Quote[]
+  invoices      Invoice[]
+  tasks         Task[]
+}
+
+enum UserRole {
+  OWNER
+  STAFF
+}
+
+model User {
+  id           String   @id @default(cuid())
+  businessId   String
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(OWNER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([businessId])
+}
+
+/// A worker jobs can be assigned to. Deliberately separate from `User`:
+/// most small crews have people doing the work who never need to log in
+/// to the app, so a staff member does not require an account.
+model StaffMember {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name       String
+  phone      String?
+  email      String?
+  colorTag   String   @default("#2563eb")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  jobs          Job[]
+  recurringJobs RecurringJob[]
+
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// Customers
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name       String
+  phone      String?
+  email      String?
+  address    String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  jobs          Job[]
+  recurringJobs RecurringJob[]
+  quotes        Quote[]
+  invoices      Invoice[]
+  tasks         Task[]
+
+  @@index([businessId])
+}
+
+// ---------------------------------------------------------------------------
+// Jobs, calendar, recurring work
+// ---------------------------------------------------------------------------
+
+enum JobStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum RecurrenceUnit {
+  DAY
+  WEEK
+  MONTH
+}
+
+model RecurringJob {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  description         String
+  address              String?
+  estimatedDurationMin Int             @default(60)
+  assignedStaffId      String?
+  assignedStaff        StaffMember?    @relation(fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  priceCents           Int?
+
+  intervalValue Int
+  intervalUnit  RecurrenceUnit
+  startDate     DateTime
+  endDate       DateTime?
+  active        Boolean   @default(true)
+
+  /// The scheduled date of the furthest-out job we've generated so far,
+  /// so the generator knows where to pick up from.
+  lastGeneratedDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs Job[]
+
+  @@index([businessId])
+  @@index([customerId])
+}
+
+model Job {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  address              String?
+  scheduledAt          DateTime
+  estimatedDurationMin Int         @default(60)
+  description          String
+  assignedStaffId      String?
+  assignedStaff        StaffMember? @relation(fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  status               JobStatus   @default(SCHEDULED)
+  internalNotes        String?
+  priceCents           Int?
+
+  recurringJobId String?
+  recurringJob   RecurringJob? @relation(fields: [recurringJobId], references: [id], onDelete: SetNull)
+
+  invoices Invoice[]
+  tasks    Task[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([customerId])
+  @@index([scheduledAt])
+}
+
+// ---------------------------------------------------------------------------
+// Quotes
+// ---------------------------------------------------------------------------
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+}
+
+model Quote {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  description String
+  notes       String?
+  status      QuoteStatus @default(DRAFT)
+
+  items    QuoteItem[]
+  invoices Invoice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([customerId])
+}
+
+model QuoteItem {
+  id            String @id @default(cuid())
+  quoteId       String
+  quote         Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  description   String
+  quantity      Float  @default(1)
+  unitPriceCents Int
+  sortOrder     Int    @default(0)
+
+  @@index([quoteId])
+}
+
+// ---------------------------------------------------------------------------
+// Invoices
+// ---------------------------------------------------------------------------
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+}
+
+model Invoice {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  jobId   String?
+  job     Job?    @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  quoteId String?
+  quote   Quote?  @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+
+  status    InvoiceStatus @default(DRAFT)
+  issueDate DateTime      @default(now())
+  dueDate   DateTime?
+  notes     String?
+
+  items InvoiceItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([customerId])
+}
+
+model InvoiceItem {
+  id             String  @id @default(cuid())
+  invoiceId      String
+  invoice        Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description    String
+  quantity       Float   @default(1)
+  unitPriceCents Int
+  sortOrder      Int     @default(0)
+
+  @@index([invoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+enum TaskStatus {
+  OPEN
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Task {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  title    String
+  notes    String?
+  dueDate  DateTime?
+  status   TaskStatus   @default(OPEN)
+  priority TaskPriority @default(MEDIUM)
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  jobId      String?
+  job        Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  /// True when Ava created this task on her own (vs. the user creating it).
+  createdByAva Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessId])
+}
