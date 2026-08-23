@@ -31,9 +31,14 @@ export default async function CustomerProfilePage({
       <PageHeader
         title={customer.name}
         action={
-          <ButtonLink href={`/customers/${customer.id}/edit`} variant="secondary" size="sm">
-            <Pencil size={16} /> Edit
-          </ButtonLink>
+          <div className="flex gap-2">
+            <ButtonLink href={`/calendar/jobs/new?customerId=${customer.id}`} size="sm">
+              Schedule job
+            </ButtonLink>
+            <ButtonLink href={`/customers/${customer.id}/edit`} variant="secondary" size="sm">
+              <Pencil size={16} /> Edit
+            </ButtonLink>
+          </div>
         }
       />
 
@@ -71,13 +76,22 @@ export default async function CustomerProfilePage({
         </CardContent>
       </Card>
 
-      {customer.recurringJobs.filter((r) => r.active).length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Recurring services</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {customer.recurringJobs
+      <Card>
+        <CardHeader>
+          <CardTitle>Recurring services</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {customer.recurringJobs.filter((r) => r.active).length === 0 ? (
+            <EmptyState
+              title="No recurring services"
+              action={
+                <ButtonLink href={`/calendar/recurring/new?customerId=${customer.id}`} size="sm">
+                  Set up recurring job
+                </ButtonLink>
+              }
+            />
+          ) : (
+            customer.recurringJobs
               .filter((r) => r.active)
               .map((recurring) => (
                 <div key={recurring.id} className="flex items-center gap-2.5 text-sm">
@@ -88,10 +102,10 @@ export default async function CustomerProfilePage({
                     {recurring.intervalValue > 1 ? "s" : ""}
                   </span>
                 </div>
-              ))}
-          </CardContent>
-        </Card>
-      )}
+              ))
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -99,7 +113,14 @@ export default async function CustomerProfilePage({
         </CardHeader>
         <CardContent>
           {upcomingJobs.length === 0 ? (
-            <EmptyState title="No upcoming jobs" description="Schedule one from the calendar." />
+            <EmptyState
+              title="No upcoming jobs"
+              action={
+                <ButtonLink href={`/calendar/jobs/new?customerId=${customer.id}`} size="sm">
+                  Schedule job
+                </ButtonLink>
+              }
+            />
           ) : (
             <ul className="divide-y divide-border">
               {upcomingJobs.map((job) => (
