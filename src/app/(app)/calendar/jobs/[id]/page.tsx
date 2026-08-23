@@ -95,6 +95,28 @@ export default async function JobDetailPage({
         </div>
       )}
 
+      {job.status === "COMPLETED" && (
+        <Card>
+          <CardContent className="flex items-center justify-between gap-3">
+            {job.invoices.length > 0 ? (
+              <>
+                <p className="text-sm text-muted">Invoice already created for this job.</p>
+                <ButtonLink href={`/money/invoices/${job.invoices[0].id}`} variant="secondary" size="sm">
+                  View invoice
+                </ButtonLink>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted">Job&apos;s done — ready to bill?</p>
+                <ButtonLink href={`/money/invoices/new?jobId=${job.id}`} size="sm">
+                  Create invoice
+                </ButtonLink>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <p className="text-center text-sm text-muted">
         <Link href="/calendar" className="hover:text-accent">
           ← Back to calendar

@@ -10,10 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { formatCents, formatDateTime } from "@/lib/format";
 import { jobStatusMeta, quoteStatusMeta, invoiceStatusMeta } from "@/lib/status";
 import { splitUpcomingPastJobs } from "@/lib/jobs";
-
-function quoteTotalCents(items: { quantity: number; unitPriceCents: number }[]) {
-  return items.reduce((sum, item) => sum + Math.round(item.quantity * item.unitPriceCents), 0);
-}
+import { lineItemsTotalCents } from "@/server/data/line-items";
 
 export default async function CustomerProfilePage({
   params,
@@ -170,14 +167,19 @@ export default async function CustomerProfilePage({
           ) : (
             <ul className="divide-y divide-border">
               {customer.quotes.map((quote) => (
-                <li key={quote.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{quote.description}</p>
-                    <p className="text-sm text-muted">{formatCents(quoteTotalCents(quote.items))}</p>
-                  </div>
-                  <Badge tone={quoteStatusMeta[quote.status].tone}>
-                    {quoteStatusMeta[quote.status].label}
-                  </Badge>
+                <li key={quote.id}>
+                  <Link
+                    href={`/money/quotes/${quote.id}`}
+                    className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 hover:text-accent"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{quote.description}</p>
+                      <p className="text-sm text-muted">{formatCents(lineItemsTotalCents(quote.items))}</p>
+                    </div>
+                    <Badge tone={quoteStatusMeta[quote.status].tone}>
+                      {quoteStatusMeta[quote.status].label}
+                    </Badge>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -195,16 +197,21 @@ export default async function CustomerProfilePage({
           ) : (
             <ul className="divide-y divide-border">
               {customer.invoices.map((invoice) => (
-                <li key={invoice.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      Invoice — {formatDateTime(invoice.issueDate)}
-                    </p>
-                    <p className="text-sm text-muted">{formatCents(quoteTotalCents(invoice.items))}</p>
-                  </div>
-                  <Badge tone={invoiceStatusMeta[invoice.status].tone}>
-                    {invoiceStatusMeta[invoice.status].label}
-                  </Badge>
+                <li key={invoice.id}>
+                  <Link
+                    href={`/money/invoices/${invoice.id}`}
+                    className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 hover:text-accent"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        Invoice — {formatDateTime(invoice.issueDate)}
+                      </p>
+                      <p className="text-sm text-muted">{formatCents(lineItemsTotalCents(invoice.items))}</p>
+                    </div>
+                    <Badge tone={invoiceStatusMeta[invoice.status].tone}>
+                      {invoiceStatusMeta[invoice.status].label}
+                    </Badge>
+                  </Link>
                 </li>
               ))}
             </ul>
