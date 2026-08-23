@@ -25,6 +25,24 @@ export async function getInvoice(id: string) {
   });
 }
 
+/**
+ * Self-heals invoice status the same way ensureRecurringJobsGenerated()
+ * tops up the calendar: any invoice that's been sent and is now past its
+ * due date gets flipped to OVERDUE, without the owner having to remember
+ * to do it by hand.
+ */
+export async function markOverdueInvoices() {
+  const session = await requireSession();
+  await prisma.invoice.updateMany({
+    where: {
+      businessId: session.businessId,
+      status: "SENT",
+      dueDate: { lt: new Date() },
+    },
+    data: { status: "OVERDUE" },
+  });
+}
+
 /** Jobs that are done and don't have an invoice yet — candidates to bill. */
 export async function listUninvoicedCompletedJobs() {
   const session = await requireSession();
